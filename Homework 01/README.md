@@ -1,4 +1,4 @@
-# Homework 0: Fundamentals – MDPs, Policy Iteration, and Value Iteration
+# Fundamentals – MDPs, Policy Iteration, and Value Iteration
 
 ## Problem 1 (Q-Value Iteration)
 ## Problem 2 (Soft Policy Iteration for Regularized MDPs)
