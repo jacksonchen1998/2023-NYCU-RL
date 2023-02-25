@@ -1,0 +1,3 @@
+- Problem 1 (Q-Value Iteration)
+- Problem 2 (Soft Policy Iteration for Regularized MDPs)
+- Problem 3 (Implementing Policy Iteration and Value Iteration) 
