@@ -2,7 +2,7 @@
 
 ## Homework 0
 
-Fundamentals – MDPs, Policy Iteration, and Value Iteration
+[Fundamentals – MDPs, Policy Iteration, and Value Iteration](https://github.com/jacksonchen1998/2023-NYCU-RL/blob/main/Homework%2001/README.md)
 
 ## Homework 1
 
