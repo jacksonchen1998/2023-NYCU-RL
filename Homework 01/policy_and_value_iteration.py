@@ -59,9 +59,31 @@ def value_iteration(env, gamma=0.9, max_iterations=10**6, eps=10**-3):
     policy = np.array([env.action_space.sample() for _ in range(num_spaces)])
     
     ##### FINISH TODOS HERE #####
+    # initialize V(s), R(s, a, s'), P(s, a, s')
+    V = np.zeros(num_spaces)
+    R, P = get_rewards_and_transitions_from_env(env)
 
+    for i in range(max_iterations):
+        V_prime = V.copy()
+        max_diff = 0
+        for s in range(num_spaces):
+            maxmium_value = 0
+            maximum_action = 0
+            for a in range(num_actions):
+                current_value = 0
+                for s_prime in range(num_spaces):
+                    # Bellman optimality operator
+                    current_value += R[s][a][s_prime] + gamma * P[s][a][s_prime] * V_prime[s]
+                if current_value > maxmium_value: # update maxmium_value and maximum_action
+                    maxmium_value = current_value
+                    maximum_action = a
 
-    
+            V[s] = maxmium_value
+            policy[s] = maximum_action
+            max_diff = max(max_diff, abs(V[s] - V_prime[s]))
+        
+        if max_diff < eps:
+            break
 
     #############################
     
@@ -103,10 +125,45 @@ def policy_iteration(env, gamma=0.9, max_iterations=10**6, eps=10**-3):
     policy = np.array([env.action_space.sample() for _ in range(num_spaces)])
     
     ##### FINISH TODOS HERE #####
+    # initialize V(s), R(s, a, s'), P(s, a, s')
+    policy_prime = policy.copy()
+    V = np.zeros(num_spaces)
+    R, P = get_rewards_and_transitions_from_env(env)
 
+    first_time = True
 
-    
+    while first_time or (policy - policy_prime).any():
+        first_time = False
+        policy_prime = policy.copy()
+        # policy evaluation
+        for i in range(max_iterations):
+            V_prime = V
+            max_diff = 0
+            for s in range(num_spaces):
+                current_value = 0
+                for s_prime in range(num_spaces):
+                    # Bellman optimality operator
+                    current_value += R[s][policy[s]][s_prime] + gamma * P[s][policy[s]][s_prime] * V_prime[s]
+                V[s] = current_value # only update V[s], since policy is fixed
+                max_diff = max(max_diff, abs(V[s] - V_prime[s]))
 
+            if max_diff < eps:
+                break
+        # policy improvement
+        for s in range(num_spaces):
+            maxmium_value = 0
+            maximum_action = 0
+            for a in range(num_actions):
+                current_value = 0
+                for s_prime in range(num_spaces):
+                    # Bellman optimality operator
+                    current_value += R[s][a][s_prime] + gamma * P[s][a][s_prime] * V[s]
+                if current_value > maxmium_value: # update maxmium_value and maximum_action
+                    maxmium_value = current_value
+                    maximum_action = a
+
+            policy[s] = maximum_action
+  
     #############################
 
     # Return optimal policy
@@ -145,6 +202,3 @@ if __name__ == '__main__':
     diff = sum([abs(x-y) for x, y in zip(pi_policy.flatten(), vi_policy.flatten())])        
     print('Discrepancy:', diff)
     
-
-
-
