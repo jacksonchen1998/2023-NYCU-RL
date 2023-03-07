@@ -13,3 +13,14 @@
 In this problem, we will implement policy iteration and value iteration for a classic MDP environment called “Taxi” (Dietterich, 2000). 
 
 This environment has been included in the OpenAI Gym: https://www.gymlibrary.dev/environments/toy_text/taxi/.
+
+The action map for taxi is as follows:
+
+| Action | Meaning |
+| :---: | :---: |
+| 0 | move south |
+| 1 | move north |
+| 2 | move east |
+| 3 | move west |
+| 4 | pickup passenger |
+| 5 | dropoff passenger |
