@@ -12,4 +12,4 @@
 
 In this problem, we will implement policy iteration and value iteration for a classic MDP environment called “Taxi” (Dietterich, 2000). 
 
-This environment has been included in the OpenAI Gym: https://gym.openai.com/envs/Taxi-v3/.
+This environment has been included in the OpenAI Gym: https://www.gymlibrary.dev/environments/toy_text/taxi/.
