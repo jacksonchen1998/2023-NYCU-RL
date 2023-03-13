@@ -24,3 +24,11 @@ The action map for taxi is as follows:
 | 3 | move west |
 | 4 | pickup passenger |
 | 5 | dropoff passenger |
+
+The reward map for taxi is as follows:
+
+| Reward | Meaning |
+| :---: | :---: |
+| -10 | illegal action |
+| -1 | per time step |
+| 20 | dropoff passenger |
