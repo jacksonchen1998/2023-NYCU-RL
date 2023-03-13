@@ -2,7 +2,7 @@
 
 ## Homework 0
 
-[Fundamentals – MDPs, Policy Iteration, and Value Iteration](./Homework%2000/README.md)
+[Fundamentals – MDPs, Policy Iteration, and Value Iteration](./Homework%200/README.md)
 
 ## Homework 1
 
