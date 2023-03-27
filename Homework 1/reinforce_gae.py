@@ -50,11 +50,14 @@ class Policy(nn.Module):
         nn.init.kaiming_normal_(self.action_head.weight)
         self.value_head = nn.Linear(self.hidden_size, 1) # initialize the value layer, since we only need one value, we set the output dimension to 1
         nn.init.kaiming_normal_(self.value_head.weight)
+        
         ########## END OF YOUR CODE ##########
         
         # action & reward memory
         self.saved_actions = []
         self.rewards = []
+        self.next_state = []
+        self.done = []
 
     def forward(self, state):
         """
@@ -70,6 +73,7 @@ class Policy(nn.Module):
         input = F.relu(self.shared_second(input))
         action_prob = F.softmax(self.action_head(input), dim=-1) # softmax over the last dimension
         state_value = self.value_head(input) # no activation function for the value layer
+
         ########## END OF YOUR CODE ##########
 
         return action_prob, state_value
@@ -89,6 +93,7 @@ class Policy(nn.Module):
         action_probability, state_value = self.forward(state) # get the action probability and the state value
         m = Categorical(action_probability) # create a categorical distribution over the list of probabilities of actions
         action = m.sample() # and sample an action using the distribution
+
         ########## END OF YOUR CODE ##########
         
         # save to action buffer
@@ -97,7 +102,7 @@ class Policy(nn.Module):
         return action.item()
 
 
-    def calculate_loss(self, gamma=0.999):
+    def calculate_loss(self, gamma=0.999, advantages=None):
         """
             Calculate the loss (= policy loss + value loss) to perform backprop later
             TODO:
@@ -107,31 +112,25 @@ class Policy(nn.Module):
         """
         
         # Initialize the lists and variables
+
         R = 0
         saved_actions = self.saved_actions
         policy_losses = [] 
         value_losses = [] 
         returns = []
 
-        ########## YOUR CODE HERE (8-15 lines) ##########
         for r in(self.rewards):
             R = r + gamma * R
             returns.insert(0, R)
 
-        gamma_t = 1
-        for (log_prob, value), sample_re in zip(saved_actions, returns):
-            # without baseline
-            policy_losses.append(-log_prob * sample_re)
-            value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re])))
-            # with baseline
-            #policy_losses.append(-log_prob * (sample_re - value))
-            #value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re])))
-
-            # policy_loss = -gamma_t * (sample_re) * log_prob
-            # policy_losses.append(policy_loss)
-            # gamma_t *= gamma
-            # value_loss = F.smooth_l1_loss(value, torch.tensor([sample_re]))
-            # value_losses.append(value_loss)
+        ########## YOUR CODE HERE (8-15 lines) ##########
+        returns = torch.tensor(returns)
+        returns = (returns - returns.mean()) / (returns.std() + 1e-5)
+        advantage = advantages.detach()
+        for (log_prob, value), R in zip(saved_actions, returns):
+            advantage = R - value.item()
+            policy_losses.append( - (advantage * log_prob))
+            value_losses.append(F.smooth_l1_loss(returns, value))
 
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
         ########## END OF YOUR CODE ##########
@@ -143,6 +142,43 @@ class Policy(nn.Module):
         del self.rewards[:]
         del self.saved_actions[:]
 
+    def get_value(self, state):
+        state = torch.from_numpy(state).float()
+        _, state_value = self.forward(state)
+        return state_value.item()
+
+class GAE:
+    def __init__(self, gamma, lambda_, num_steps):
+        self.gamma = gamma
+        self.lambda_ = lambda_
+        self.num_steps = num_steps          # set num_steps = None to adapt full batch
+
+    def __call__(self, rewards, values, done):
+
+    #Implement Generalized Advantage Estimation (GAE) for your value prediction
+    #TODO (1): Pass correct corresponding inputs (rewards, values, and done) into the function arguments
+    #TODO (2): Calculate the Generalized Advantage Estimation and return the obtained value
+
+
+        ########## YOUR CODE HERE (8-15 lines) ##########
+        # Initialize the lists and variables
+        advantages = []
+        advantage = 0
+        next_value = 0
+
+        for reward, value, done in zip(reversed(rewards), reversed(values), reversed(done)):
+            if done:
+                next_value = 0
+            delta = reward + self.gamma * next_value - value
+            advantage = delta + self.gamma * self.lambda_ * advantage
+            advantages.insert(0, advantage)
+            next_value = value
+
+        advantages = torch.tensor(advantages)
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
+        return advantages
+
+        ########## END OF YOUR CODE ##########
 
 def train(lr=0.01):
     """
@@ -157,7 +193,9 @@ def train(lr=0.01):
     
     # Instantiate the policy model and the optimizer
     model = Policy()
-    record = SummaryWriter("./log/")
+    # using GAE as the value prediction
+    value_prediction = GAE(gamma=0.99, lambda_=0.99, num_steps=None)
+
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # Learning rate scheduler (optional)
@@ -179,21 +217,23 @@ def train(lr=0.01):
         # For each episode, only run 9999 steps to avoid entering infinite loop during the learning process
         
         ########## YOUR CODE HERE (10-15 lines) ##########
+        # GAE value prediction
         for t in range(10000):
             action = model.select_action(state)
             state_prime, reward, done, _ = env.step(action)
-            model.rewards.append(reward)
+            model.rewards.append(reward/200)
             ep_reward += reward
             if done:
                 break
             state = state_prime
 
         optimizer.zero_grad()
-        loss = model.calculate_loss() 
-        record.add_scalar('Loss', loss, i_episode)
+        loss = model.calculate_loss(0.99, value_prediction)
+        writer.add_scalar('Loss', loss.item(), i_episode)
         loss.backward()
         optimizer.step()
         model.clear_memory()
+
         ########## END OF YOUR CODE ##########
             
         # update EWMA reward and log the results
@@ -202,16 +242,17 @@ def train(lr=0.01):
 
         #Try to use Tensorboard to record the behavior of your implementation 
         ########## YOUR CODE HERE (4-5 lines) ##########
-        record.add_scalar('Reward', ep_reward, i_episode)
-        record.add_scalar('Length', t, i_episode)
-        record.add_scalar('Learning Rate', lr, i_episode)
+        writer.add_scalar('Reward', ep_reward, i_episode)
+        writer.add_scalar('Length', t, i_episode)
+        writer.add_scalar('Learning Rate', lr, i_episode)
+        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
         ########## END OF YOUR CODE ##########
 
         # check if we have "solved" the cart pole problem, use 120 as the threshold in LunarLander-v2
         if ewma_reward > env.spec.reward_threshold:
             if not os.path.isdir("./preTrained"):
                 os.mkdir("./preTrained")
-            torch.save(model.state_dict(), './preTrained/CartPole_{}.pth'.format(lr))
+            torch.save(model.state_dict(), './preTrained/LunarLander-v2_{}.pth'.format(lr))
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(ewma_reward, t))
             break
@@ -246,9 +287,9 @@ def test(name, n_episodes=10):
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
-    lr = 0.001
-    env = gym.make('CartPole-v0')
+    lr = 0.0005
+    env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    #train(lr)
-    test(f'CartPole_{lr}.pth')
+    train(lr)
+    test(f'LunarLander_{lr}.pth')

@@ -55,6 +55,8 @@ class Policy(nn.Module):
         # action & reward memory
         self.saved_actions = []
         self.rewards = []
+        self.next_states = []
+        self.dones = []
 
     def forward(self, state):
         """
@@ -64,7 +66,6 @@ class Policy(nn.Module):
             TODO:
                 1. Implement the forward pass for both the action and the state value
         """
-        
         ########## YOUR CODE HERE (3~5 lines) ##########
         input = F.relu(self.shared_first(state))
         input = F.relu(self.shared_second(input))
@@ -97,7 +98,7 @@ class Policy(nn.Module):
         return action.item()
 
 
-    def calculate_loss(self, gamma=0.999):
+    def calculate_loss(self, gamma=0.99):
         """
             Calculate the loss (= policy loss + value loss) to perform backprop later
             TODO:
@@ -111,28 +112,21 @@ class Policy(nn.Module):
         saved_actions = self.saved_actions
         policy_losses = [] 
         value_losses = [] 
-        returns = []
 
         ########## YOUR CODE HERE (8-15 lines) ##########
-        for r in(self.rewards):
-            R = r + gamma * R
-            returns.insert(0, R)
-
         gamma_t = 1
-        for (log_prob, value), sample_re in zip(saved_actions, returns):
-            # without baseline
-            policy_losses.append(-log_prob * sample_re)
-            value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re])))
-            # with baseline
-            #policy_losses.append(-log_prob * (sample_re - value))
-            #value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re])))
-
-            # policy_loss = -gamma_t * (sample_re) * log_prob
-            # policy_losses.append(policy_loss)
-            # gamma_t *= gamma
-            # value_loss = F.smooth_l1_loss(value, torch.tensor([sample_re]))
-            # value_losses.append(value_loss)
-
+        for (log_prob, value), reward, next_state, done in zip(saved_actions, self.rewards, self.next_states, self.dones):
+            TD_t = 0.0
+            if done:
+                TD_t = reward
+            else:
+                next_state = torch.from_numpy(next_state).float()
+                _, next_value = self.forward(next_state)
+                TD_t = reward + gamma * next_value.item()
+            policy_loss = -gamma_t * log_prob * (TD_t - value.detach())
+            policy_losses.append(policy_loss)
+            value_loss = F.mse_loss(value, torch.tensor([TD_t]).float())
+            value_losses.append(value_loss)
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
         ########## END OF YOUR CODE ##########
         
@@ -142,7 +136,8 @@ class Policy(nn.Module):
         # reset rewards and action buffer
         del self.rewards[:]
         del self.saved_actions[:]
-
+        del self.next_states[:]
+        del self.dones[:]
 
 def train(lr=0.01):
     """
@@ -175,14 +170,16 @@ def train(lr=0.01):
 
         # Uncomment the following line to use learning rate scheduler
         scheduler.step()
-        
+
         # For each episode, only run 9999 steps to avoid entering infinite loop during the learning process
-        
+
         ########## YOUR CODE HERE (10-15 lines) ##########
         for t in range(10000):
             action = model.select_action(state)
             state_prime, reward, done, _ = env.step(action)
-            model.rewards.append(reward)
+            model.rewards.append(reward/200)
+            model.next_states.append(state_prime)
+            model.dones.append(done)
             ep_reward += reward
             if done:
                 break
@@ -190,7 +187,7 @@ def train(lr=0.01):
 
         optimizer.zero_grad()
         loss = model.calculate_loss() 
-        record.add_scalar('Loss', loss, i_episode)
+        record.add_scalar('Loss', loss.item(), i_episode)
         loss.backward()
         optimizer.step()
         model.clear_memory()
@@ -198,20 +195,22 @@ def train(lr=0.01):
             
         # update EWMA reward and log the results
         ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
+        
         print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}'.format(i_episode, t, ep_reward, ewma_reward))
-
+        print('Learning rate: {}'.format(scheduler.get_lr()[0]))
         #Try to use Tensorboard to record the behavior of your implementation 
         ########## YOUR CODE HERE (4-5 lines) ##########
         record.add_scalar('Reward', ep_reward, i_episode)
         record.add_scalar('Length', t, i_episode)
         record.add_scalar('Learning Rate', lr, i_episode)
+        record.add_scalar('EWMA Reward', ewma_reward, i_episode)
         ########## END OF YOUR CODE ##########
 
         # check if we have "solved" the cart pole problem, use 120 as the threshold in LunarLander-v2
         if ewma_reward > env.spec.reward_threshold:
             if not os.path.isdir("./preTrained"):
                 os.mkdir("./preTrained")
-            torch.save(model.state_dict(), './preTrained/CartPole_{}.pth'.format(lr))
+            torch.save(model.state_dict(), './preTrained/LunarLander-v2_{}.pth'.format(lr))
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(ewma_reward, t))
             break
@@ -246,9 +245,9 @@ def test(name, n_episodes=10):
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
-    lr = 0.001
-    env = gym.make('CartPole-v0')
+    lr = 0.0005
+    env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    #train(lr)
-    test(f'CartPole_{lr}.pth')
+    train(lr)
+    test('LunarLander-v2_{}.pth'.format(lr))
