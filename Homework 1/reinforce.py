@@ -236,7 +236,7 @@ def test(name, n_episodes=10):
             state, reward, done, _ = env.step(action)
             running_reward += reward
             if render:
-                 env.render()
+                env.render()
             if done:
                 break
         print('Episode {}\tReward: {}'.format(i_episode, running_reward))

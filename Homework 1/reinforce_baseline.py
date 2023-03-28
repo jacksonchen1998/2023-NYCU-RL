@@ -235,7 +235,8 @@ def test(name, n_episodes=10):
             state, reward, done, _ = env.step(action)
             running_reward += reward
             if render:
-                 env.render()
+                env.render()
+                # save every frame into png files
             if done:
                 break
         print('Episode {}\tReward: {}'.format(i_episode, running_reward))
@@ -249,5 +250,5 @@ if __name__ == '__main__':
     env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    train(lr)
+    #train(lr)
     test('LunarLander-v2_{}.pth'.format(lr))

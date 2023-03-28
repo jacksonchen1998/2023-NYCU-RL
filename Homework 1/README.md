@@ -8,6 +8,29 @@
 
 ## Problem 4 (Policy Gradient Algorithms With Function Approximation)
 
-<center>
-    <img src = "./gif/task2.gif">
-</center>
+<table>
+    <tr>
+        <th>
+            Task
+        </th>
+        <th>
+            GIF
+        </th>
+    </tr>
+    <tr>
+        <td>
+            CartPole-v0
+        </td>
+        <td>
+            <img src="./gif/task1.gif" width="500" height="300">
+        </td>
+    </tr>
+    <tr>
+        <td>
+            LunarLander-v2
+        </td>
+        <td>
+            <img src="./gif/task2.gif" width="500" height="300">
+        </td>
+    </tr>
+</table>
