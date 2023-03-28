@@ -6,6 +6,7 @@ import gym
 from itertools import count
 from collections import namedtuple
 import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -39,25 +40,18 @@ class Policy(nn.Module):
         self.action_dim = env.action_space.n if self.discrete else env.action_space.shape[0]
         self.hidden_size = 128
         self.double()
-        self.dropout = nn.Dropout(p=0.1)
         
         ########## YOUR CODE HERE (5~10 lines) ##########
-        self.shared_first = nn.Linear(self.observation_dim, self.hidden_size) # initialize the shared layer
-        nn.init.kaiming_normal_(self.shared_first.weight) # random weight initialization
-        self.shared_second = nn.Linear(self.hidden_size, self.hidden_size)
-        nn.init.kaiming_normal_(self.shared_second.weight)
-        self.action_head = nn.Linear(self.hidden_size, self.action_dim) # initialize the action layer
-        nn.init.kaiming_normal_(self.action_head.weight)
-        self.value_head = nn.Linear(self.hidden_size, 1) # initialize the value layer, since we only need one value, we set the output dimension to 1
-        nn.init.kaiming_normal_(self.value_head.weight)
-        
+        self.affine = nn.Linear(self.observation_dim, self.hidden_size)
+
+        self.action = nn.Linear(self.hidden_size, self.action_dim)
+        self.value = nn.Linear(self.hidden_size, 1)
         ########## END OF YOUR CODE ##########
         
         # action & reward memory
-        self.saved_actions = []
+        self.state_value = []
         self.rewards = []
-        self.next_state = []
-        self.done = []
+        self.log_probs = []
 
     def forward(self, state):
         """
@@ -67,18 +61,19 @@ class Policy(nn.Module):
             TODO:
                 1. Implement the forward pass for both the action and the state value
         """
-        
         ########## YOUR CODE HERE (3~5 lines) ##########
-        input = F.relu(self.shared_first(state))
-        input = self.dropout(input)
-        input = F.relu(self.shared_second(input))
-        input = self.dropout(input)
-        action_prob = F.softmax(self.action_head(input), dim=-1) # softmax over the last dimension
-        state_value = self.value_head(input) # no activation function for the value layer
+        state = torch.from_numpy(state).float() # convert the state to a tensor
+        x = F.relu(self.affine(state)) # pass the state through the shared layer(s)
+        state_value = self.value(x) # pass the output of the shared layer(s) through the value layer(s)
+        action_prob = F.softmax(self.action(x), dim=-1) # pass the output of the shared layer(s) through the action layer(s)
+        action_dist = Categorical(action_prob) # create a categorical distribution over the list of probabilities of actions
+        action = action_dist.sample() # and sample an action using the distribution
 
+        self.log_probs.append(action_dist.log_prob(action))
+        self.state_value.append(state_value)
         ########## END OF YOUR CODE ##########
 
-        return action_prob, state_value
+        return action.item()
 
 
     def select_action(self, state):
@@ -103,7 +98,7 @@ class Policy(nn.Module):
         return action.item()
 
 
-    def calculate_loss(self, gamma=0.999, advantages=None):
+    def calculate_loss(self, gamma=0.99):
         """
             Calculate the loss (= policy loss + value loss) to perform backprop later
             TODO:
@@ -113,22 +108,23 @@ class Policy(nn.Module):
         """
         
         # Initialize the lists and variables
+        rewards = []
+        dis_rewards = 0
 
-        R = 0
-        saved_actions = self.saved_actions
-        policy_losses = [] 
-        value_losses = [] 
-
-        vals = []
-
-        for a, v in saved_actions:
-            vals.append(v[0])
         ########## YOUR CODE HERE (8-15 lines) ##########
-        for (log_prob, val), advantage in zip(saved_actions, advantages(self.rewards, vals, self.done)):
-            policy_losses.append(-log_prob * advantage.detach())
-            value_losses.append(advantage.pow(2))
+        for r in self.rewards[::-1]:
+            dis_rewards = r + gamma * dis_rewards
+            rewards.insert(0, dis_rewards)
 
-        loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
+        rewards = torch.tensor(rewards)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-9) # normalize the rewards
+
+        loss = 0
+        for log_prob, value, r in zip(self.log_probs, self.state_value, rewards):
+            advantage = r - value.item()
+            action_loss = -log_prob * advantage
+            value_loss = F.smooth_l1_loss(value, r)
+            loss += (action_loss + value_loss)
         ########## END OF YOUR CODE ##########
         
         return loss
@@ -136,44 +132,8 @@ class Policy(nn.Module):
     def clear_memory(self):
         # reset rewards and action buffer
         del self.rewards[:]
-        del self.saved_actions[:]
-
-    def get_value(self, state):
-        state = torch.from_numpy(state).float()
-        _, state_value = self.forward(state)
-        return state_value.item()
-
-class GAE:
-    def __init__(self, gamma, lambda_, num_steps):
-        self.gamma = gamma
-        self.lambda_ = lambda_
-        self.num_steps = num_steps          # set num_steps = None to adapt full batch
-
-    def __call__(self, rewards, values, done):
-
-    #Implement Generalized Advantage Estimation (GAE) for your value prediction
-    #TODO (1): Pass correct corresponding inputs (rewards, values, and done) into the function arguments
-    #TODO (2): Calculate the Generalized Advantage Estimation and return the obtained value
-
-
-        ########## YOUR CODE HERE (8-15 lines) ##########
-        # Initialize the lists and variables
-        advantages = []
-        advantage = 0
-        next_value = 0
-
-        for reward, value, done in zip(reversed(rewards), reversed(values), reversed(done)):
-            td_error = reward + self.gamma * next_value * (1 - done) - value
-            advantage = td_error + self.gamma * self.lambda_ * advantage * (1 - done)
-            next_value = value
-            advantages.insert(0, advantage)
-
-        advantages = torch.tensor(advantages)
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
-
-        return advantages
-
-        ########## END OF YOUR CODE ##########
+        del self.log_probs[:]
+        del self.state_value[:]
 
 def train(lr=0.01):
     """
@@ -188,13 +148,12 @@ def train(lr=0.01):
     
     # Instantiate the policy model and the optimizer
     model = Policy()
-    # using GAE as the value prediction
-    value_prediction = GAE(gamma=0.99, lambda_=0.99, num_steps=None)
-
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    record = SummaryWriter("./log/")
+    optimizer = optim.Adam(model.parameters(), lr=lr, betas = (0.9, 0.999))
+    render = False
     
     # Learning rate scheduler (optional)
-    scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
+    #scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
     
     # EWMA reward for tracking the learning progress
     ewma_reward = 0
@@ -207,52 +166,59 @@ def train(lr=0.01):
         t = 0
 
         # Uncomment the following line to use learning rate scheduler
-        scheduler.step()
         
+
         # For each episode, only run 9999 steps to avoid entering infinite loop during the learning process
-        
+
         ########## YOUR CODE HERE (10-15 lines) ##########
-        # GAE value prediction
         for t in range(10000):
-            action = model.select_action(state)
-            state_prime, reward, done, _ = env.step(action)
-            model.rewards.append(reward/200)
-            model.done.append(done)
+            state = env.reset()
+            action = model(state)
+            state, reward, done, _ = env.step(action)
+            model.rewards.append(reward)
+            reward = reward / 20
             ep_reward += reward
+            if render and i_episode > 1000:
+                env.render()
             if done:
                 break
-            state = state_prime
 
         optimizer.zero_grad()
-        loss = model.calculate_loss(0.99, value_prediction)
-        writer.add_scalar('Loss', loss.item(), i_episode)
+        loss = model.calculate_loss(0.99)
         loss.backward()
         optimizer.step()
+        #scheduler.step()
         model.clear_memory()
-
         ########## END OF YOUR CODE ##########
             
         # update EWMA reward and log the results
-        ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
+        #ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
+        
         print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}'.format(i_episode, t, ep_reward, ewma_reward))
-
+        #print('Learning rate: {}'.format(scheduler.get_lr()[0]))
         #Try to use Tensorboard to record the behavior of your implementation 
         ########## YOUR CODE HERE (4-5 lines) ##########
-        writer.add_scalar('Reward', ep_reward, i_episode)
-        writer.add_scalar('Length', t, i_episode)
-        writer.add_scalar('Learning Rate', lr, i_episode)
-        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
+        record.add_scalar('Reward', ep_reward, i_episode)
+        record.add_scalar('Length', t, i_episode)
+        record.add_scalar('Learning Rate', lr, i_episode)
+        #record.add_scalar('EWMA Reward', ewma_reward, i_episode)
         ########## END OF YOUR CODE ##########
 
         # check if we have "solved" the cart pole problem, use 120 as the threshold in LunarLander-v2
-        if ewma_reward > env.spec.reward_threshold:
+        if ep_reward > 4000:
             if not os.path.isdir("./preTrained"):
                 os.mkdir("./preTrained")
             torch.save(model.state_dict(), './preTrained/LunarLander-v2_{}.pth'.format(lr))
             print("Solved! Running reward is now {} and "
-                  "the last episode runs to {} time steps!".format(ewma_reward, t))
+                  "the last episode runs to {} time steps!".format(ep_reward, t))
             break
 
+        if i_episode == 100:
+            if not os.path.isdir("./preTrained"):
+                os.mkdir("./preTrained")
+            torch.save(model.state_dict(), './preTrained/LunarLander-v2_{}.pth'.format(lr))
+            print("Episode {}\tlength: {}\treward: {}\t ewma reward: {}".format(i_episode, t, ep_reward, ewma_reward))
+            #print('Learning rate: {}'.format(scheduler.get_lr()[0]))
 
 def test(name, n_episodes=10):
     """
@@ -269,7 +235,7 @@ def test(name, n_episodes=10):
         state = env.reset()
         running_reward = 0
         for t in range(max_episode_len+1):
-            action = model.select_action(state)
+            action = model(state)
             state, reward, done, _ = env.step(action)
             running_reward += reward
             if render:
@@ -283,9 +249,9 @@ def test(name, n_episodes=10):
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
-    lr = 0.0005
+    lr = 0.02
     env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    #train(lr)
-    test(f'LunarLander-v2_{lr}.pth')
+    train(lr)
+    test('LunarLander-v2_{}.pth'.format(lr))
