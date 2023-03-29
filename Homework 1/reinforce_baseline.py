@@ -19,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
 # Define a tensorboard writer
-writer = SummaryWriter("./tb_record_1")
+writer = SummaryWriter("./tb_record_2")
         
 class Policy(nn.Module):
     """
@@ -55,8 +55,6 @@ class Policy(nn.Module):
         # action & reward memory
         self.saved_actions = []
         self.rewards = []
-        self.next_states = []
-        self.dones = []
 
     def forward(self, state):
         """
@@ -112,21 +110,18 @@ class Policy(nn.Module):
         saved_actions = self.saved_actions
         policy_losses = [] 
         value_losses = [] 
+        returns = []
 
         ########## YOUR CODE HERE (8-15 lines) ##########
+        for r in reversed(self.rewards):
+            R = r + gamma * R
+            returns.insert(0, R)
+
         gamma_t = 1
-        for (log_prob, value), reward, next_state, done in zip(saved_actions, self.rewards, self.next_states, self.dones):
-            TD_t = 0.0
-            if done:
-                TD_t = reward
-            else:
-                next_state = torch.from_numpy(next_state).float()
-                _, next_value = self.forward(next_state)
-                TD_t = reward + gamma * next_value.item()
-            policy_loss = -gamma_t * log_prob * (TD_t - value.detach())
-            policy_losses.append(policy_loss)
-            value_loss = F.mse_loss(value, torch.tensor([TD_t]).float())
-            value_losses.append(value_loss)
+        for (log_prob, value), sample in zip(saved_actions, returns):
+            policy_losses.append(-gamma_t * (sample - value.detach()) * log_prob)
+            value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample])))
+
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
         ########## END OF YOUR CODE ##########
         
@@ -136,8 +131,6 @@ class Policy(nn.Module):
         # reset rewards and action buffer
         del self.rewards[:]
         del self.saved_actions[:]
-        del self.next_states[:]
-        del self.dones[:]
 
 def train(lr=0.01):
     """
@@ -152,11 +145,10 @@ def train(lr=0.01):
     
     # Instantiate the policy model and the optimizer
     model = Policy()
-    record = SummaryWriter("./log/")
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # Learning rate scheduler (optional)
-    scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
+    scheduler = Scheduler.StepLR(optimizer, step_size=300, gamma=0.9)
     
     # EWMA reward for tracking the learning progress
     ewma_reward = 0
@@ -178,16 +170,14 @@ def train(lr=0.01):
             action = model.select_action(state)
             state_prime, reward, done, _ = env.step(action)
             model.rewards.append(reward/200)
-            model.next_states.append(state_prime)
-            model.dones.append(done)
             ep_reward += reward
             if done:
                 break
             state = state_prime
 
         optimizer.zero_grad()
-        loss = model.calculate_loss() 
-        record.add_scalar('Loss', loss.item(), i_episode)
+        loss = model.calculate_loss(0.99) 
+        writer.add_scalar('Loss', loss.item(), i_episode)
         loss.backward()
         optimizer.step()
         model.clear_memory()
@@ -197,13 +187,12 @@ def train(lr=0.01):
         ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
         
         print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}'.format(i_episode, t, ep_reward, ewma_reward))
-        print('Learning rate: {}'.format(scheduler.get_lr()[0]))
         #Try to use Tensorboard to record the behavior of your implementation 
         ########## YOUR CODE HERE (4-5 lines) ##########
-        record.add_scalar('Reward', ep_reward, i_episode)
-        record.add_scalar('Length', t, i_episode)
-        record.add_scalar('Learning Rate', lr, i_episode)
-        record.add_scalar('EWMA Reward', ewma_reward, i_episode)
+        writer.add_scalar('Reward', ep_reward, i_episode)
+        writer.add_scalar('Length', t, i_episode)
+        writer.add_scalar('Learning Rate', scheduler.get_lr()[0], i_episode)
+        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
         ########## END OF YOUR CODE ##########
 
         # check if we have "solved" the cart pole problem, use 120 as the threshold in LunarLander-v2
@@ -246,9 +235,9 @@ def test(name, n_episodes=10):
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
-    lr = 0.0005
+    lr = 0.005
     env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    #train(lr)
+    train(lr)
     test('LunarLander-v2_{}.pth'.format(lr))

@@ -157,7 +157,6 @@ def train(lr=0.01):
     
     # Instantiate the policy model and the optimizer
     model = Policy()
-    record = SummaryWriter("./log/")
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # Learning rate scheduler (optional)
@@ -190,7 +189,7 @@ def train(lr=0.01):
 
         optimizer.zero_grad()
         loss = model.calculate_loss() 
-        record.add_scalar('Loss', loss, i_episode)
+        writer.add_scalar('Loss', loss, i_episode)
         loss.backward()
         optimizer.step()
         model.clear_memory()
@@ -202,9 +201,10 @@ def train(lr=0.01):
 
         #Try to use Tensorboard to record the behavior of your implementation 
         ########## YOUR CODE HERE (4-5 lines) ##########
-        record.add_scalar('Reward', ep_reward, i_episode)
-        record.add_scalar('Length', t, i_episode)
-        record.add_scalar('Learning Rate', lr, i_episode)
+        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
+        writer.add_scalar('Reward', ep_reward, i_episode)
+        writer.add_scalar('Length', t, i_episode)
+        writer.add_scalar('Learning Rate', scheduler.get_lr()[0], i_episode)
         ########## END OF YOUR CODE ##########
 
         # check if we have "solved" the cart pole problem, use 120 as the threshold in LunarLander-v2
@@ -250,5 +250,5 @@ if __name__ == '__main__':
     env = gym.make('CartPole-v0')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    #train(lr)
+    train(lr)
     test(f'CartPole_{lr}.pth')

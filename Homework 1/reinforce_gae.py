@@ -18,7 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
 # Define a tensorboard writer
-writer = SummaryWriter("./tb_record_1")
+writer = SummaryWriter("./tb_record_3")
         
 class Policy(nn.Module):
     """
@@ -175,7 +175,7 @@ class GAE:
 
         ########## END OF YOUR CODE ##########
 
-def train(lr=0.01):
+def train(lr=0.01, lam=0.99):
     """
         Train the model using SGD (via backpropagation)
         TODO (1): In each episode, 
@@ -189,12 +189,12 @@ def train(lr=0.01):
     # Instantiate the policy model and the optimizer
     model = Policy()
     # using GAE as the value prediction
-    value_prediction = GAE(gamma=0.99, lambda_=0.99, num_steps=None)
+    value_prediction = GAE(gamma=0.99, lambda_=lam, num_steps=None)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # Learning rate scheduler (optional)
-    scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
+    scheduler = Scheduler.StepLR(optimizer, step_size=300, gamma=0.9)
     
     # EWMA reward for tracking the learning progress
     ewma_reward = 0
@@ -216,7 +216,7 @@ def train(lr=0.01):
         for t in range(10000):
             action = model.select_action(state)
             state_prime, reward, done, _ = env.step(action)
-            model.rewards.append(reward/200)
+            model.rewards.append(reward)
             model.done.append(done)
             ep_reward += reward
             if done:
@@ -240,7 +240,7 @@ def train(lr=0.01):
         ########## YOUR CODE HERE (4-5 lines) ##########
         writer.add_scalar('Reward', ep_reward, i_episode)
         writer.add_scalar('Length', t, i_episode)
-        writer.add_scalar('Learning Rate', lr, i_episode)
+        writer.add_scalar('Learning Rate', scheduler.get_lr()[0], i_episode)
         writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
         ########## END OF YOUR CODE ##########
 
@@ -248,7 +248,7 @@ def train(lr=0.01):
         if ewma_reward > env.spec.reward_threshold:
             if not os.path.isdir("./preTrained"):
                 os.mkdir("./preTrained")
-            torch.save(model.state_dict(), './preTrained/LunarLander-v2_{}.pth'.format(lr))
+            torch.save(model.state_dict(), './preTrained/LunarLander-v2_{}_{}.pth'.format(lr, lam))
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(ewma_reward, t))
             break
@@ -283,9 +283,10 @@ def test(name, n_episodes=10):
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
-    lr = 0.0005
+    lr = 0.005
+    lam = 0.98 # lambda for GAE means as a trade-off between bias and variance, greater lambda means more bias and less variance
     env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    #train(lr)
-    test(f'LunarLander-v2_{lr}.pth')
+    train(lr, lam)
+    test(f'LunarLander-v2_{lr}_{lam}.pth')
