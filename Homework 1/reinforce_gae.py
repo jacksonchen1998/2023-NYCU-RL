@@ -103,7 +103,7 @@ class Policy(nn.Module):
         return action.item()
 
 
-    def calculate_loss(self, gamma=0.999, advantages=None):
+    def calculate_loss(self, gamma=0.99, advantages=None):
         """
             Calculate the loss (= policy loss + value loss) to perform backprop later
             TODO:
@@ -125,9 +125,10 @@ class Policy(nn.Module):
             vals.append(v[0])
         ########## YOUR CODE HERE (8-15 lines) ##########
         for (log_prob, val), advantage in zip(saved_actions, advantages(self.rewards, vals, self.done)):
-            policy_losses.append(-log_prob * advantage.detach())
-            value_losses.append(advantage.pow(2))
-
+            policy_losses.append(-log_prob * advantage.detach()) # minimize the negative log likelihood
+            value_losses.append(advantage.pow(2)) # maximize the advantage function
+            # we need to maximize the advantage function, but we can minimize the negative of the advantage function
+            # since the goal is to maximize the reward, we can minimize the negative of the reward
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
         ########## END OF YOUR CODE ##########
         
@@ -160,16 +161,16 @@ class GAE:
         # Initialize the lists and variables
         advantages = []
         advantage = 0
-        next_value = 0
+        next_value = 0 
 
         for reward, value, done in zip(reversed(rewards), reversed(values), reversed(done)):
-            td_error = reward + self.gamma * next_value * (1 - done) - value
-            advantage = td_error + self.gamma * self.lambda_ * advantage * (1 - done)
-            next_value = value
-            advantages.insert(0, advantage)
+            td_error = reward + self.gamma * next_value * (1 - done) - value # calculate the temporal difference error
+            advantage = td_error + self.gamma * self.lambda_ * advantage * (1 - done) # calculate the advantage
+            next_value = value # update the next value
+            advantages.insert(0, advantage) # insert the advantage to the front of the list
 
-        advantages = torch.tensor(advantages)
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
+        advantages = torch.tensor(advantages) # convert the list to a tensor
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5) # normalize the advantages
 
         return advantages
 
@@ -284,7 +285,7 @@ if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
     lr = 0.005
-    lam = 0.98 # lambda for GAE means as a trade-off between bias and variance, greater lambda means more bias and less variance
+    lam = 0.97 # lambda for GAE means as a trade-off between bias and variance, greater lambda means more bias and less variance
     env = gym.make('LunarLander-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  

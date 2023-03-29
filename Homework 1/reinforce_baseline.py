@@ -107,7 +107,7 @@ class Policy(nn.Module):
         
         # Initialize the lists and variables
         R = 0
-        saved_actions = self.saved_actions
+        saved_actions = self.saved_actions # get the saved actions
         policy_losses = [] 
         value_losses = [] 
         returns = []
@@ -119,7 +119,8 @@ class Policy(nn.Module):
 
         gamma_t = 1
         for (log_prob, value), sample in zip(saved_actions, returns):
-            policy_losses.append(-gamma_t * (sample - value.detach()) * log_prob)
+            policy_losses.append(-gamma_t * (sample - value.detach()) * log_prob) 
+            # detach the value from the graph, where the value is the baseline
             value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample])))
 
         loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
@@ -169,7 +170,7 @@ def train(lr=0.01):
         for t in range(10000):
             action = model.select_action(state)
             state_prime, reward, done, _ = env.step(action)
-            model.rewards.append(reward/200)
+            model.rewards.append(reward/200) # normalize the reward
             ep_reward += reward
             if done:
                 break

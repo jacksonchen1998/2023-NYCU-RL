@@ -114,26 +114,17 @@ class Policy(nn.Module):
         returns = []
 
         ########## YOUR CODE HERE (8-15 lines) ##########
-        for r in(self.rewards):
-            R = r + gamma * R
+        for r in(self.rewards): # calculate the rewards
+            R = r + gamma * R # gamma is the discount factor
             returns.insert(0, R)
 
         gamma_t = 1
         for (log_prob, value), sample_re in zip(saved_actions, returns):
             # without baseline
-            policy_losses.append(-log_prob * sample_re)
-            value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re])))
-            # with baseline
-            #policy_losses.append(-log_prob * (sample_re - value))
-            #value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re])))
+            policy_losses.append(-log_prob * sample_re) # sample_re is the reward
+            value_losses.append(F.smooth_l1_loss(value, torch.tensor([sample_re]))) # smooth L1 loss
 
-            # policy_loss = -gamma_t * (sample_re) * log_prob
-            # policy_losses.append(policy_loss)
-            # gamma_t *= gamma
-            # value_loss = F.smooth_l1_loss(value, torch.tensor([sample_re]))
-            # value_losses.append(value_loss)
-
-        loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum()
+        loss = torch.stack(policy_losses).sum() + torch.stack(value_losses).sum() # sum up all the losses
         ########## END OF YOUR CODE ##########
         
         return loss
@@ -178,7 +169,7 @@ def train(lr=0.01):
         # For each episode, only run 9999 steps to avoid entering infinite loop during the learning process
         
         ########## YOUR CODE HERE (10-15 lines) ##########
-        for t in range(10000):
+        for t in range(10000): # run the policy for 10000 steps, since the environment will terminate the episode before 10000 steps
             action = model.select_action(state)
             state_prime, reward, done, _ = env.step(action)
             model.rewards.append(reward)
@@ -187,8 +178,8 @@ def train(lr=0.01):
                 break
             state = state_prime
 
-        optimizer.zero_grad()
-        loss = model.calculate_loss() 
+        optimizer.zero_grad() # reset the gradient
+        loss = model.calculate_loss()  # calculate the loss
         writer.add_scalar('Loss', loss, i_episode)
         loss.backward()
         optimizer.step()
@@ -201,10 +192,10 @@ def train(lr=0.01):
 
         #Try to use Tensorboard to record the behavior of your implementation 
         ########## YOUR CODE HERE (4-5 lines) ##########
-        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
+        writer.add_scalar('EWMA Reward', ewma_reward, i_episode) # record the ewma reward
         writer.add_scalar('Reward', ep_reward, i_episode)
-        writer.add_scalar('Length', t, i_episode)
-        writer.add_scalar('Learning Rate', scheduler.get_lr()[0], i_episode)
+        writer.add_scalar('Length', t, i_episode) # record the length, i.e. the number of steps
+        writer.add_scalar('Learning Rate', scheduler.get_lr()[0], i_episode) # record the learning rate
         ########## END OF YOUR CODE ##########
 
         # check if we have "solved" the cart pole problem, use 120 as the threshold in LunarLander-v2
