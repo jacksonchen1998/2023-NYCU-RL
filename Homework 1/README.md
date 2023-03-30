@@ -28,7 +28,7 @@
             CartPole-v0
         </td>
         <td>
-            <img src="./gif/task1.gif" width="500" height="300">
+            <img src="./gif/task1.gif">
         </td>
     </tr>
     <tr>
@@ -36,7 +36,7 @@
             LunarLander-v2
         </td>
         <td>
-            <img src="./gif/task2.gif" width="500" height="300">
+            <img src="./gif/task2.gif">
         </td>
     </tr>
 </table>
