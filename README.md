@@ -10,4 +10,6 @@
 
 ## Homework 2
 
+[DDPG and TRPO](./Homework%202/README.md)
+
 ## Homework 3
