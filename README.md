@@ -1,5 +1,7 @@
 # 2023-NYCU-RL
 
+The OpenAI gym version used in this course is `0.25.2`.
+
 ## Homework 0
 
 [Fundamentals – MDPs, Policy Iteration, and Value Iteration](./Homework%200/README.md)
