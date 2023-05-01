@@ -90,7 +90,7 @@ class Actor(nn.Module):
         x = F.relu(self.fc1(inputs))
         x = F.relu(self.fc2(x))
         x = torch.tanh(self.fc3(x))
-        action = x * torch.Tensor(self.action_space.high)
+        action = x * torch.Tensor(self.action_space.high) 
         return action
         
         
@@ -166,6 +166,7 @@ class DDPG(object):
 
 
     def update_parameters(self, batch):
+
         state_batch = Variable(torch.cat(batch.state))
         action_batch = Variable(torch.cat(batch.action))
         reward_batch = Variable(torch.cat(batch.reward))
@@ -179,22 +180,23 @@ class DDPG(object):
         # Compute Q targets
         next_actions = self.actor_target(next_state_batch)
         q_next_value = self.critic_target(next_state_batch, next_actions.detach())
-        q_targets = reward_batch + (self.gamma * mask_batch * q_next_value)
-    
-        # Compute critic loss
-        q_values = self.critic(state_batch, action_batch)
-        value_loss = F.mse_loss(q_values, q_targets)
-    
-        # Compute actor loss
-        policy_loss = -self.critic(state_batch, self.actor(state_batch)).mean()
-    
-        # Update critic network
+        
+        # Compute the target
+        reward_batch = reward_batch.unsqueeze(1)
+        done_batch = mask_batch.unsqueeze(1)
+        q_target = reward_batch + (1.0 - done_batch) * self.gamma * q_next_value
+
+        # Update the critic
         self.critic_optim.zero_grad()
+        state_action_batch = self.critic(state_batch, action_batch)
+        value_loss = F.mse_loss(state_action_batch, q_target.detach())
         value_loss.backward()
         self.critic_optim.step()
-    
-        # Update actor network
+
+        # Update the actor
         self.actor_optim.zero_grad()
+        policy_loss = -self.critic(state_batch, self.actor(state_batch))
+        policy_loss = policy_loss.mean()
         policy_loss.backward()
         self.actor_optim.step()
 
@@ -239,10 +241,11 @@ def train():
     print_freq = 1
     ewma_reward = 0
     rewards = []
+    value_losses = []
+    policy_losses = []
     ewma_reward_history = []
     total_numsteps = 0
     updates = 0
-
     
     agent = DDPG(env.observation_space.shape[0], env.action_space, gamma, tau, hidden_size)
     ounoise = OUNoise(env.action_space.shape[0])
@@ -262,6 +265,9 @@ def train():
             # 1. Interact with the env to get new (s,a,r,s') samples 
             # 2. Push the sample to the replay buffer
             # 3. Update the actor and the critic
+
+            epoch_value_loss = 0
+            epoch_policy_loss = 0
             
             # Interact with the environment to get new (s,a,r,s') samples            
             action = agent.select_action(state)
@@ -281,6 +287,8 @@ def train():
                     batch = Transition(*zip(*transitions))
                     value_loss, policy_loss = agent.update_parameters(batch)
                     updates += 1
+                    epoch_value_loss += value_loss
+                    epoch_policy_loss += policy_loss
 
             state = next_state
             episode_reward += reward.item()
@@ -290,9 +298,10 @@ def train():
                 break
 
             ########## END OF YOUR CODE ########## 
-            
 
         rewards.append(episode_reward)
+        value_losses.append(epoch_value_loss/updates_per_step)
+        policy_losses.append(epoch_policy_loss/updates_per_step)
         t = 0
         if i_episode % print_freq == 0:
             state = torch.Tensor([env.reset()])
@@ -320,7 +329,7 @@ def train():
             ewma_reward_history.append(ewma_reward)           
             print("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward))
     
-    agent.save_model(env_name, '.pth')
+    agent.save_model(env_name='Pendulum-v1', suffix="DDPG")
  
 
 if __name__ == '__main__':
