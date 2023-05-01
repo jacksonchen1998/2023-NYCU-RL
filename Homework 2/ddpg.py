@@ -80,7 +80,8 @@ class Actor(nn.Module):
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, num_outputs)
 
-        
+        # initialize weights and biases
+
         ########## END OF YOUR CODE ##########
         
     def forward(self, inputs):
@@ -92,7 +93,6 @@ class Actor(nn.Module):
         x = torch.tanh(self.fc3(x))
         action = x * torch.Tensor(self.action_space.high) 
         return action
-        
         
         ########## END OF YOUR CODE ##########
 
@@ -108,6 +108,8 @@ class Critic(nn.Module):
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, 1)
 
+        # initialize weights and biases
+
         ########## END OF YOUR CODE ##########
 
     def forward(self, inputs, actions):
@@ -120,7 +122,7 @@ class Critic(nn.Module):
         x = self.fc3(x)
         return x
         
-        ########## END OF YOUR CODE ##########        
+        ########## END OF YOUR CODE ##########          
         
 
 class DDPG(object):
@@ -155,10 +157,10 @@ class DDPG(object):
         # Clipping might be needed 
         if action_noise is not None:
             # Add noise to action for exploration
-            mu += action_noise * torch.randn(self.action_space.shape)
+            mu += torch.Tensor(action_noise.noise())
 
         # Clip action values to valid range
-        mu = torch.clamp(mu, self.action_space.low[0], self.action_space.high[0])
+        mu = mu.clamp(self.action_space.low[0], self.action_space.high[0])
     
         return mu
 
@@ -270,9 +272,8 @@ def train():
             epoch_policy_loss = 0
             
             # Interact with the environment to get new (s,a,r,s') samples            
-            action = agent.select_action(state)
-            action = action.numpy()[0] + ounoise.noise()
-            next_state, reward, done, _ = env.step(action)
+            action = agent.select_action(state, ounoise)
+            next_state, reward, done, _ = env.step(action.numpy()[0])
             next_state = torch.Tensor([next_state])
             reward = torch.Tensor([reward])
             done = torch.Tensor([done])
@@ -328,6 +329,10 @@ def train():
             ewma_reward = 0.05 * episode_reward + (1 - 0.05) * ewma_reward
             ewma_reward_history.append(ewma_reward)           
             print("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward))
+            writer.add_scalar('reward/ewma', ewma_reward, i_episode)
+            writer.add_scalar('reward/ep_reward', rewards[-1], i_episode)
+            writer.add_scalar('loss/value', value_loss, i_episode)
+            writer.add_scalar('loss/policy', policy_loss, i_episode)
     
     agent.save_model(env_name='Pendulum-v1', suffix="DDPG")
  
