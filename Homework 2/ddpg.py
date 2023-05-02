@@ -77,9 +77,14 @@ class Actor(nn.Module):
 
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
-        self.fc1 = nn.Linear(num_inputs, 400, device=device)
-        self.fc2 = nn.Linear(400, 300, device=device)
-        self.fc3 = nn.Linear(300, num_outputs, device=device)
+        self.actor_layer = nn.Sequential(
+            nn.Linear(num_inputs, 400, device=device),
+            nn.ReLU(),
+            nn.Linear(400, 300, device=device),
+            nn.ReLU(),
+            nn.Linear(300, num_outputs, device=device),
+            nn.Tanh()
+        )
 
         # initialize weights and biases
 
@@ -89,10 +94,9 @@ class Actor(nn.Module):
         
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Define the forward pass your actor network
-        x = F.relu(self.fc1(inputs))
-        x = F.relu(self.fc2(x))
-        action = torch.tanh(self.fc3(x))
-        return action
+        out = self.actor_layer(inputs)
+        
+        return out
         
         ########## END OF YOUR CODE ##########
 
@@ -155,7 +159,7 @@ class DDPG(object):
 
     def select_action(self, state, action_noise=None):
         self.actor.eval()
-        mu = self.actor((Variable(state).to(device)))
+        mu = self.actor((Variable(state.to(device))))
         mu = mu.data
 
         ########## YOUR CODE HERE (3~5 lines) ##########
@@ -169,7 +173,7 @@ class DDPG(object):
             mu += torch.tensor(action_noise).to(device)
 
         # Clip action values to valid range
-        mu = mu.clamp(-1, 1)
+        mu = torch.clamp(mu, -1.0, 1.0).cpu()
     
         return mu
 
@@ -178,11 +182,11 @@ class DDPG(object):
 
     def update_parameters(self, batch):
 
-        state_batch = Variable(torch.cat(batch.state))
-        action_batch = Variable(torch.cat(batch.action))
-        reward_batch = Variable(torch.cat(batch.reward))
-        mask_batch = Variable(torch.cat(batch.mask))
-        next_state_batch = Variable(torch.cat(batch.next_state))
+        state_batch = Variable(batch.state)
+        action_batch = Variable(batch.action)
+        reward_batch = Variable(batch.reward)
+        mask_batch = Variable(batch.mask)
+        next_state_batch = Variable(batch.next_state)
         
         ########## YOUR CODE HERE (10~20 lines) ##########
         # Calculate policy loss and value loss
