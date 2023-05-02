@@ -268,7 +268,7 @@ def train():
         ounoise.scale = noise_scale
         ounoise.reset()
         
-        state = torch.Tensor([env.reset()])
+        state = torch.Tensor(env.reset())
 
         episode_reward = 0
         while True:
