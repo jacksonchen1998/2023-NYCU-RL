@@ -78,6 +78,7 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
 
+        # Actor network
         self.actor_layer = nn.Sequential(
             nn.Linear(num_inputs, 400, device=device),
             nn.ReLU(),
@@ -86,6 +87,19 @@ class Actor(nn.Module):
             nn.Linear(300, num_outputs, device=device),
             nn.Tanh()
         )
+
+        '''
+        Actor network structure
+        Layer (type)               Output Shape         Param #
+        =========================================================
+        Linear-1                   [-1, 400]            32,000
+        ReLU-2                     [-1, 400]            0
+        Linear-3                   [-1, 300]            120,300
+        ReLU-4                     [-1, 300]            0
+        Linear-5                   [-1, 1]              301
+        Tanh-6                     [-1, 1]              0
+        =========================================================
+        '''
         
         ########## END OF YOUR CODE ##########
         
@@ -109,16 +123,30 @@ class Critic(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own critic network
 
+        # Shared layer: state
         self.state_layer = nn.Sequential(
             nn.Linear(num_inputs, 400, device=device),
             nn.ReLU(),
         )
 
+        # Shared layer: state and action
         self.shared_layer = nn.Sequential(
             nn.Linear(num_outputs + 400, 300, device=device),
             nn.ReLU(),
             nn.Linear(300, 1, device=device),
         )
+
+        '''
+        Critic network structure
+        Layer (type)               Output Shape         Param #
+        =========================================================
+        Linear-1                   [-1, 400]            32,000
+        ReLU-2                     [-1, 400]            0
+        Linear-3                   [-1, 300]            120,300
+        ReLU-4                     [-1, 300]            0
+        Linear-5                   [-1, 1]              301
+        =========================================================
+        '''
 
         ########## END OF YOUR CODE ##########
 
@@ -167,9 +195,11 @@ class DDPG(object):
 
         self.actor.train()
 
+        # add noise to action
         if action_noise is not None:
             mu += torch.tensor(action_noise).to(device)
 
+        # clip action, set action between -1 and 1
         return torch.clamp(mu, -1, 1).cpu()
 
         ########## END OF YOUR CODE ##########
@@ -186,21 +216,19 @@ class DDPG(object):
         # Calculate policy loss and value loss
         # Update the actor and the critic
 
-        # compute Q-value in next state
+        # predict next action and Q-value in next state
         actions_next = self.actor_target(next_state_batch)
         Q_targets_next = self.critic_target(next_state_batch, actions_next)
 
-        # compute TD target for current states
-        # mask_batch: if next state is done, the right terms should be zero
+        # compute TD target, set Q_target to 0 if next state is terminal
         Q_targets = reward_batch + (self.gamma * Q_targets_next * (1 - mask_batch))
 
-        # estimate Q-value in current state
+        # predict Q-value in current state
         Q_expected = self.critic(state_batch, action_batch)
         
-        # compute critic loss (MSE of TD target and current estimation)
+        # compute critic loss (MSE loss)
         value_loss = F.mse_loss(Q_expected, Q_targets)
 
-        # minimize the loss
         self.critic_optim.zero_grad()
         value_loss.backward()
         self.critic_optim.step()
@@ -208,10 +236,9 @@ class DDPG(object):
         # predict action in current state
         actions_pred = self.actor(state_batch)
         
-        # compute actor loss (policy gradient: can be viewed as gradient of Q w.r.t theta)
+        # compute actor loss (policy gradient)
         policy_loss = -self.critic(state_batch, actions_pred).mean()
 
-        # minimize the loss
         self.actor_optim.zero_grad()
         policy_loss.backward()
         self.actor_optim.step()
@@ -282,24 +309,32 @@ def train():
             # 2. Push the sample to the replay buffer
             # 3. Update the actor and the critic
 
-            # interact with the env
+            # select action and interact with the environment
+            # add noise to action for exploration
             action = agent.select_action(state, ounoise.noise() * noise_scale)
             next_state, reward, done, _ = env.step(action.numpy())
             
-            # push the sample to the replay buffer
+            # add sample to replay buffer
+            # convert to numpy array, since replay buffer only accepts numpy array
             memory.push(state.numpy(), action.numpy(), done, next_state, reward)
 
             # update the actor and the critic
             if memory.__len__() > batch_size:
                 experiences_batch = memory.sample(batch_size)
+
+                # convert to Transition object
+                # Since the replay buffer stores numpy array, we need to convert them to torch tensor
+                # and move them to GPU
                 experiences_batch = Transition(state=torch.from_numpy(np.vstack([i.state for i in experiences_batch])).to(torch.float32).to(device),
                                                action=torch.from_numpy(np.vstack([i.action for i in experiences_batch])).to(torch.float32).to(device),
                                                mask=torch.from_numpy(np.vstack([i.mask for i in experiences_batch])).to(torch.uint8).to(device),
                                                next_state=torch.from_numpy(np.vstack([i.next_state for i in experiences_batch])).to(torch.float32).to(device),
                                                reward=torch.from_numpy(np.vstack([i.reward for i in experiences_batch])).to(torch.float32).to(device))
                 
+                # update the actor and the critic
                 value_loss, policy_loss = agent.update_parameters(experiences_batch)
             
+            # update the state
             state = torch.Tensor(next_state).clone()
             episode_reward += reward
 
@@ -373,6 +408,6 @@ if __name__ == '__main__':
     env = gym.make('Pendulum-v1')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    # train()
-    test()
+    train()
+    #test()
 
