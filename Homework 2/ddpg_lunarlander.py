@@ -16,14 +16,15 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 # Define a tensorboard writer
-writer = SummaryWriter("./tb_record_2")
+tb_folder_name = time.strftime("%m%d%Y_%H%M%S", time.localtime())
+writer = SummaryWriter("./tb_record/b/{}".format(tb_folder_name))
 device = 'cuda:0'
 
-def soft_update(target, source, tau): # soft update model parameters, target = target * (1-tau) + source * tau
+def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
 
-def hard_update(target, source): # hard update model parameters, target = source
+def hard_update(target, source):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(param.data)
 
@@ -78,12 +79,14 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
 
-        self.fc1 = nn.Linear(num_inputs, 400, device=device)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(400, 300, device=device)
-        self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(300, num_outputs, device=device)
-        self.tanh = nn.Tanh()
+        self.actor_layer = nn.Sequential(
+            nn.Linear(num_inputs, 400, device=device),
+            nn.ReLU(),
+            nn.Linear(400, 300, device=device),
+            nn.ReLU(),
+            nn.Linear(300, num_outputs, device=device),
+            nn.Tanh()
+        )
         
         ########## END OF YOUR CODE ##########
         
@@ -92,13 +95,9 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Define the forward pass your actor network
 
-        x = self.fc1(inputs)
-        x = self.relu1(x)
-        x = self.fc2(x)
-        x = self.relu2(x)
-        x = self.fc3(x)
-        x = self.tanh(x)
-        return x
+        out = self.actor_layer(inputs)
+        
+        return out
         
         ########## END OF YOUR CODE ##########
 
@@ -108,15 +107,19 @@ class Critic(nn.Module):
         self.action_space = action_space
         num_outputs = action_space.shape[0]
 
-        ######### YOUR CODE HERE (5~10 lines) ##########
+        ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own critic network
 
-        self.state_layer = nn.Linear(num_inputs, 400, device=device)
-        self.relu1 = nn.ReLU()
+        self.state_layer = nn.Sequential(
+            nn.Linear(num_inputs, 400, device=device),
+            nn.ReLU(),
+        )
 
-        self.shared_layer1 = nn.Linear(num_outputs + 400, 300, device=device)
-        self.relu2 = nn.ReLU()
-        self.shared_layer2 = nn.Linear(300, 1, device=device)
+        self.shared_layer = nn.Sequential(
+            nn.Linear(num_outputs + 400, 300, device=device),
+            nn.ReLU(),
+            nn.Linear(300, 1, device=device),
+        )
 
         ########## END OF YOUR CODE ##########
 
@@ -126,14 +129,12 @@ class Critic(nn.Module):
         # Define the forward pass your critic network
         
         out = self.state_layer(inputs)
-        out = self.relu1(out)
-        out = torch.cat([out, actions], dim=1)
-        out = self.shared_layer1(out)
-        out = self.relu2(out)
-        out = self.shared_layer2(out)
+        out = self.shared_layer(torch.cat([out, actions], dim=1))
+        
         return out
         
         ########## END OF YOUR CODE ##########      
+
 
 class DDPG(object):
     def __init__(self, num_inputs, action_space, gamma=0.995, tau=0.0005, hidden_size=128, lr_a=1e-4, lr_c=1e-3):
@@ -320,7 +321,7 @@ def train():
 
                 next_state, reward, done, _ = env.step(action.numpy()[0])
                 
-                env.render()
+                # env.render()
                 
                 episode_reward += reward
 
@@ -339,28 +340,23 @@ def train():
             print("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward))
 
             # log to tensorboard
-            writer.add_scalar('Reward/ewma', ewma_reward, i_episode)
-            writer.add_scalar('Reward/ep_reward', ewma_reward, i_episode)
-            writer.add_scalar('Loss/value', value_loss, i_episode)
-            writer.add_scalar('Loss/policy', policy_loss, i_episode)
+            writer.add_scalar('Reward/ep_reward', episode_reward, i_episode)
+            writer.add_scalar('Reward/ewma_reward', ewma_reward, i_episode)
+            writer.add_scalar('Loss/value_loss', value_loss, i_episode)
+            writer.add_scalar('Loss/policy_loss', policy_loss, i_episode)
     
-    agent.save_model(env_name='LunarLanderContinuous-v2', suffix="DDPG")
+    agent.save_model('LunarLanderContinuous-v2', '.pth')        
  
-
 def test():
     num_episodes = 10
     render = True
     env = gym.make('LunarLanderContinuous-v2')
-    env.seed(10)  
-    torch.manual_seed(10)
-    # load model to agent
     agent = DDPG(env.observation_space.shape[0], env.action_space)
-    agent.load_model(actor_path='preTrained/ddpg_actor_LunarLanderContinuous-v2_05142020_164802_DDPG',
-                        critic_path='preTrained/ddpg_critic_LunarLanderContinuous-v2_05142020_164802_DDPG')
+    agent.load_model(actor_path='preTrained/ddpg_actor_LunarLanderContinuous-v2_05022023_185800_.pth',
+                        critic_path='preTrained/ddpg_critic_LunarLanderContinuous-v2_05022023_185800_.pth')
     for i_episode in range(num_episodes):
         state = torch.Tensor([env.reset()])
         episode_reward = 0
-        t = 0
         while True:
             action = agent.select_action(state)
             next_state, reward, done, _ = env.step(action.numpy()[0])
@@ -369,7 +365,6 @@ def test():
             episode_reward += reward
             next_state = torch.Tensor([next_state])
             state = next_state
-            t += 1
             if done:
                 break
         print("Episode: {}, reward: {:.2f}".format(i_episode, episode_reward))
@@ -380,5 +375,6 @@ if __name__ == '__main__':
     env = gym.make('LunarLanderContinuous-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    train()
-    #test()
+    # train()
+    test()
+
