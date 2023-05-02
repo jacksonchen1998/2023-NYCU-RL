@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # Define a tensorboard writer
 writer = SummaryWriter("./tb_record_1")
-device = 'cuda:0'
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
@@ -78,12 +78,14 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
 
-        self.fc1 = nn.Linear(num_inputs, 400, device=device)
-        self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(400, 300, device=device)
-        self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(300, num_outputs, device=device)
-        self.tanh = nn.Tanh()
+        self.actor_layer = nn.Sequential(
+            nn.Linear(num_inputs, 400, device=device),
+            nn.ReLU(),
+            nn.Linear(400, 300, device=device),
+            nn.ReLU(),
+            nn.Linear(300, num_outputs, device=device),
+            nn.Tanh()
+        )
         
         ########## END OF YOUR CODE ##########
         
@@ -92,13 +94,9 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Define the forward pass your actor network
 
-        x = self.fc1(inputs)
-        x = self.relu1(x)
-        x = self.fc2(x)
-        x = self.relu2(x)
-        x = self.fc3(x)
-        x = self.tanh(x)
-        return x
+        out = self.actor_layer(inputs)
+        
+        return out
         
         ########## END OF YOUR CODE ##########
 
@@ -108,15 +106,19 @@ class Critic(nn.Module):
         self.action_space = action_space
         num_outputs = action_space.shape[0]
 
-        ######### YOUR CODE HERE (5~10 lines) ##########
+        ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own critic network
 
-        self.state_layer = nn.Linear(num_inputs, 400, device=device)
-        self.relu1 = nn.ReLU()
+        self.state_layer = nn.Sequential(
+            nn.Linear(num_inputs, 400, device=device),
+            nn.ReLU(),
+        )
 
-        self.shared_layer1 = nn.Linear(num_outputs + 400, 300, device=device)
-        self.relu2 = nn.ReLU()
-        self.shared_layer2 = nn.Linear(300, 1, device=device)
+        self.shared_layer = nn.Sequential(
+            nn.Linear(num_outputs + 400, 300, device=device),
+            nn.ReLU(),
+            nn.Linear(300, 1, device=device),
+        )
 
         ########## END OF YOUR CODE ##########
 
@@ -126,14 +128,11 @@ class Critic(nn.Module):
         # Define the forward pass your critic network
         
         out = self.state_layer(inputs)
-        out = self.relu1(out)
-        out = torch.cat([out, actions], dim=1)
-        out = self.shared_layer1(out)
-        out = self.relu2(out)
-        out = self.shared_layer2(out)
+        out = self.shared_layer(torch.cat([out, actions], dim=1))
+        
         return out
         
-        ########## END OF YOUR CODE ##########      
+        ########## END OF YOUR CODE ##########        
 
 class DDPG(object):
     def __init__(self, num_inputs, action_space, gamma=0.995, tau=0.0005, hidden_size=128, lr_a=1e-4, lr_c=1e-3):
@@ -351,8 +350,8 @@ def test():
     render = True
     env = gym.make('Pendulum-v1')
     agent = DDPG(env.observation_space.shape[0], env.action_space)
-    agent.load_model(actor_path='preTrained/ddpg_actor_Pendulum-v1_05142020_174809_DDPG',
-                        critic_path='preTrained/ddpg_critic_Pendulum-v1_05142020_174809_DDPG')
+    agent.load_model(actor_path='./preTrained/ddpg_actor_Pendulum-v1_05022023_155126_.pth',
+                        critic_path='./preTrained/ddpg_critic_Pendulum-v1_05022023_155126_.pth')
     for i_episode in range(num_episodes):
         state = torch.Tensor([env.reset()])
         episode_reward = 0
@@ -374,6 +373,6 @@ if __name__ == '__main__':
     env = gym.make('Pendulum-v1')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    train()
-    #test()
+    # train()
+    test()
 
