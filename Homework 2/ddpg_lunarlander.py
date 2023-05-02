@@ -16,9 +16,8 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 # Define a tensorboard writer
-tb_folder_name = time.strftime("%m%d%Y_%H%M%S", time.localtime())
-writer = SummaryWriter("./tb_record/b/{}".format(tb_folder_name))
-device = 'cuda:0'
+writer = SummaryWriter("./tb_record_2")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
@@ -262,7 +261,6 @@ def train():
     ewma_reward_history = []
     total_numsteps = 0
     updates = 0
-
     
     agent = DDPG(env.observation_space.shape[0], env.action_space, gamma, tau, hidden_size)
     ounoise = OUNoise(env.action_space.shape[0])
@@ -321,7 +319,7 @@ def train():
 
                 next_state, reward, done, _ = env.step(action.numpy()[0])
                 
-                # env.render()
+                env.render()
                 
                 episode_reward += reward
 
