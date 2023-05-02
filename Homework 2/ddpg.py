@@ -78,11 +78,11 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
 
-        self.fc1 = nn.Linear(num_inputs, 600, device=device)
+        self.fc1 = nn.Linear(num_inputs, 400, device=device)
         self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(600, 500, device=device)
+        self.fc2 = nn.Linear(400, 300, device=device)
         self.relu2 = nn.ReLU()
-        self.fc3 = nn.Linear(500, num_outputs, device=device)
+        self.fc3 = nn.Linear(300, num_outputs, device=device)
         self.tanh = nn.Tanh()
         
         ########## END OF YOUR CODE ##########
@@ -111,12 +111,12 @@ class Critic(nn.Module):
         ######### YOUR CODE HERE (5~10 lines) ##########
         # Construct your own critic network
 
-        self.state_layer = nn.Linear(num_inputs, 600, device=device)
+        self.state_layer = nn.Linear(num_inputs, 400, device=device)
         self.relu1 = nn.ReLU()
 
-        self.shared_layer1 = nn.Linear(num_outputs + 600, 500, device=device)
+        self.shared_layer1 = nn.Linear(num_outputs + 400, 300, device=device)
         self.relu2 = nn.ReLU()
-        self.shared_layer2 = nn.Linear(500, 1, device=device)
+        self.shared_layer2 = nn.Linear(300, 1, device=device)
 
         ########## END OF YOUR CODE ##########
 
