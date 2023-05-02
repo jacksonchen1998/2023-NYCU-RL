@@ -17,6 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 # Define a tensorboard writer
 writer = SummaryWriter("./tb_record_3")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
@@ -76,9 +77,9 @@ class Actor(nn.Module):
 
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
-        self.fc1 = nn.Linear(num_inputs, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, num_outputs)
+        self.fc1 = nn.Linear(num_inputs, 400, device=device)
+        self.fc2 = nn.Linear(400, 300, device=device)
+        self.fc3 = nn.Linear(300, num_outputs, device=device)
 
         # initialize weights and biases
 
@@ -90,8 +91,7 @@ class Actor(nn.Module):
         # Define the forward pass your actor network
         x = F.relu(self.fc1(inputs))
         x = F.relu(self.fc2(x))
-        x = torch.tanh(self.fc3(x))
-        action = x * torch.Tensor(self.action_space.high) 
+        action = torch.tanh(self.fc3(x))
         return action
         
         ########## END OF YOUR CODE ##########
@@ -104,9 +104,16 @@ class Critic(nn.Module):
 
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own critic network
-        self.fc1 = nn.Linear(num_inputs + num_outputs, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, 1)
+        self.state_layer = nn.Sequential(
+            nn.Linear(num_inputs, 400, device=device),
+            nn.ReLU(),
+        )
+
+        self.shared_layer = nn.Sequential(
+            nn.Linear(num_outputs + 400, 300, device=device),
+            nn.ReLU(),
+            nn.Linear(300, 1, device=device),
+        )
 
         # initialize weights and biases
 
@@ -116,11 +123,10 @@ class Critic(nn.Module):
         
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Define the forward pass your critic network
-        x = torch.cat([inputs, actions], 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+        out = self.state_layer(inputs)
+        out = self.shared_layer(torch.cat([out, actions], dim=1))
+        
+        return out
         
         ########## END OF YOUR CODE ##########          
         
@@ -149,18 +155,21 @@ class DDPG(object):
 
     def select_action(self, state, action_noise=None):
         self.actor.eval()
-        mu = self.actor((Variable(state)))
+        mu = self.actor((Variable(state).to(device)))
         mu = mu.data
 
         ########## YOUR CODE HERE (3~5 lines) ##########
         # Add noise to your action for exploration
         # Clipping might be needed 
+
+        self.actor.train()
+
         if action_noise is not None:
             # Add noise to action for exploration
-            mu += torch.Tensor(action_noise.noise())
+            mu += torch.tensor(action_noise).to(device)
 
         # Clip action values to valid range
-        mu = mu.clamp(self.action_space.low[0], self.action_space.high[0])
+        mu = mu.clamp(-1, 1)
     
         return mu
 
@@ -181,21 +190,20 @@ class DDPG(object):
         
         # Compute Q targets
         next_actions = self.actor_target(next_state_batch)
-        q_next_value = self.critic_target(next_state_batch, next_actions.detach())
+        q_next_value = self.critic_target(next_state_batch, next_actions)
         
-        # Compute the target
-        reward_batch = reward_batch.unsqueeze(1)
-        done_batch = mask_batch.unsqueeze(1)
-        q_target = reward_batch + (1.0 - done_batch) * self.gamma * q_next_value
+        # Compute Q targets for current states
+        q_target = reward_batch + (1.0 - mask_batch) * self.gamma * q_next_value
 
         # Update the critic
-        self.critic_optim.zero_grad()
         state_action_batch = self.critic(state_batch, action_batch)
-        value_loss = F.mse_loss(state_action_batch, q_target.detach())
+        value_loss = F.mse_loss(state_action_batch, q_target)
+        self.critic_optim.zero_grad()
         value_loss.backward()
         self.critic_optim.step()
 
         # Update the actor
+
         self.actor_optim.zero_grad()
         policy_loss = -self.critic(state_batch, self.actor(state_batch))
         policy_loss = policy_loss.mean()
@@ -243,8 +251,6 @@ def train():
     print_freq = 1
     ewma_reward = 0
     rewards = []
-    value_losses = []
-    policy_losses = []
     ewma_reward_history = []
     total_numsteps = 0
     updates = 0
@@ -272,28 +278,26 @@ def train():
             epoch_policy_loss = 0
             
             # Interact with the environment to get new (s,a,r,s') samples            
-            action = agent.select_action(state, ounoise)
-            next_state, reward, done, _ = env.step(action.numpy()[0])
-            next_state = torch.Tensor([next_state])
-            reward = torch.Tensor([reward])
-            done = torch.Tensor([done])
+            action = agent.select_action(state, ounoise.noise() * noise_scale)
+            next_state, reward, done, _ = env.step(action.numpy())
             
             # Push the sample to the replay buffer
-            memory.push(state, action, reward, next_state, done)
+            memory.push(state.numpy(), action.numpy(), reward, next_state, done)
 
             # Update the actor and the critic
             if len(memory) > batch_size:
                 for i in range(updates_per_step):
                     transitions = memory.sample(batch_size)
-                    batch = Transition(*zip(*transitions))
-                    value_loss, policy_loss = agent.update_parameters(batch)
+                    transitions = Transition(state=torch.from_numpy(np.vstack([i.state for i in transitions])).to(torch.float32).to(device),
+                                               action=torch.from_numpy(np.vstack([i.action for i in transitions])).to(torch.float32).to(device),
+                                               mask=torch.from_numpy(np.vstack([i.mask for i in transitions])).to(torch.uint8).to(device),
+                                               next_state=torch.from_numpy(np.vstack([i.next_state for i in transitions])).to(torch.float32).to(device),
+                                               reward=torch.from_numpy(np.vstack([i.reward for i in transitions])).to(torch.float32).to(device))
                     updates += 1
-                    epoch_value_loss += value_loss
-                    epoch_policy_loss += policy_loss
+                    epoch_value_loss, epoch_policy_loss = agent.update_parameters(transitions)
 
-            state = next_state
-            episode_reward += reward.item()
-            total_numsteps += 1
+            state = torch.Tensor([next_state]).clone()
+            episode_reward += reward
 
             if done or total_numsteps == env._max_episode_steps:
                 break
@@ -301,8 +305,6 @@ def train():
             ########## END OF YOUR CODE ########## 
 
         rewards.append(episode_reward)
-        value_losses.append(epoch_value_loss/updates_per_step)
-        policy_losses.append(epoch_policy_loss/updates_per_step)
         t = 0
         if i_episode % print_freq == 0:
             state = torch.Tensor([env.reset()])
@@ -331,8 +333,8 @@ def train():
             print("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward))
             writer.add_scalar('reward/ewma', ewma_reward, i_episode)
             writer.add_scalar('reward/ep_reward', rewards[-1], i_episode)
-            writer.add_scalar('loss/value', value_loss, i_episode)
-            writer.add_scalar('loss/policy', policy_loss, i_episode)
+            writer.add_scalar('loss/value', epoch_value_loss, i_episode)
+            writer.add_scalar('loss/policy', epoch_policy_loss, i_episode)
     
     agent.save_model(env_name='Pendulum-v1', suffix="DDPG")
  
