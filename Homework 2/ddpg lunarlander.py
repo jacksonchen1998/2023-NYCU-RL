@@ -16,14 +16,14 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 # Define a tensorboard writer
-writer = SummaryWriter("./tb_record_1")
+writer = SummaryWriter("./tb_record_2")
 device = 'cuda:0'
 
-def soft_update(target, source, tau):
+def soft_update(target, source, tau): # soft update model parameters, target = target * (1-tau) + source * tau
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
 
-def hard_update(target, source):
+def hard_update(target, source): # hard update model parameters, target = source
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(param.data)
 
@@ -247,7 +247,7 @@ class DDPG(object):
             self.critic.load_state_dict(torch.load(critic_path))
 
 def train():    
-    num_episodes = 200
+    num_episodes = 1000
     gamma = 0.995
     tau = 0.002
     hidden_size = 128
@@ -344,18 +344,23 @@ def train():
             writer.add_scalar('Loss/value', value_loss, i_episode)
             writer.add_scalar('Loss/policy', policy_loss, i_episode)
     
-    agent.save_model(env_name='Pendulum-v1', suffix="DDPG")
+    agent.save_model(env_name='LunarLanderContinuous-v2', suffix="DDPG")
  
+
 def test():
     num_episodes = 10
     render = True
-    env = gym.make('Pendulum-v1')
+    env = gym.make('LunarLanderContinuous-v2')
+    env.seed(10)  
+    torch.manual_seed(10)
+    # load model to agent
     agent = DDPG(env.observation_space.shape[0], env.action_space)
-    agent.load_model(actor_path='preTrained/ddpg_actor_Pendulum-v1_05142020_174809_DDPG',
-                        critic_path='preTrained/ddpg_critic_Pendulum-v1_05142020_174809_DDPG')
+    agent.load_model(actor_path='preTrained/ddpg_actor_LunarLanderContinuous-v2_05142020_164802_DDPG',
+                        critic_path='preTrained/ddpg_critic_LunarLanderContinuous-v2_05142020_164802_DDPG')
     for i_episode in range(num_episodes):
         state = torch.Tensor([env.reset()])
         episode_reward = 0
+        t = 0
         while True:
             action = agent.select_action(state)
             next_state, reward, done, _ = env.step(action.numpy()[0])
@@ -364,6 +369,7 @@ def test():
             episode_reward += reward
             next_state = torch.Tensor([next_state])
             state = next_state
+            t += 1
             if done:
                 break
         print("Episode: {}, reward: {:.2f}".format(i_episode, episode_reward))
@@ -371,9 +377,8 @@ def test():
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
     random_seed = 10  
-    env = gym.make('Pendulum-v1')
+    env = gym.make('LunarLanderContinuous-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
     train()
     #test()
-
