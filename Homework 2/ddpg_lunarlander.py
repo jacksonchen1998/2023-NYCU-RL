@@ -79,7 +79,7 @@ class Actor(nn.Module):
         # Construct your own actor network
 
         # Actor network
-        self.actor_layer = nn.Sequential(
+        self.layer = nn.Sequential(
             nn.Linear(num_inputs, 400, device=device),
             nn.ReLU(),
             nn.Linear(400, 300, device=device),
@@ -108,7 +108,7 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Define the forward pass your actor network
 
-        out = self.actor_layer(inputs)
+        out = self.layer(inputs)
         
         return out
         
@@ -217,17 +217,17 @@ class DDPG(object):
         # Update the actor and the critic
 
         # predict next action and Q-value in next state
-        actions_next = self.actor_target(next_state_batch)
-        Q_targets_next = self.critic_target(next_state_batch, actions_next)
+        next_action_batch = self.actor_target(next_state_batch)
+        next_state_action_values = self.critic_target(next_state_batch, next_action_batch)
 
         # compute TD target, set Q_target to 0 if next state is terminal
-        Q_targets = reward_batch + (self.gamma * Q_targets_next * (1 - mask_batch))
+        Q_targets = reward_batch + (self.gamma * next_state_action_values * (1 - mask_batch))
 
         # predict Q-value in current state
-        Q_expected = self.critic(state_batch, action_batch)
+        state_action_batch = self.critic(state_batch, action_batch)
         
         # compute critic loss (MSE loss)
-        value_loss = F.mse_loss(Q_expected, Q_targets)
+        value_loss = F.mse_loss(state_action_batch, Q_targets)
 
         self.critic_optim.zero_grad()
         value_loss.backward()
@@ -371,7 +371,7 @@ def train():
             ewma_reward_history.append(ewma_reward)           
             print("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward))
 
-            # log to tensorboard
+            # write results to tensorboard
             writer.add_scalar('Reward/ep_reward', episode_reward, i_episode)
             writer.add_scalar('Reward/ewma_reward', ewma_reward, i_episode)
             writer.add_scalar('Loss/value_loss', value_loss, i_episode)
