@@ -79,7 +79,7 @@ class Actor(nn.Module):
         # Construct your own actor network
 
         # Actor network
-        self.layer = nn.Sequential(
+        self.actor_layer = nn.Sequential(
             nn.Linear(num_inputs, 400, device=device),
             nn.ReLU(),
             nn.Linear(400, 300, device=device),
@@ -108,7 +108,7 @@ class Actor(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Define the forward pass your actor network
 
-        out = self.layer(inputs)
+        out = self.actor_layer(inputs)
         
         return out
         
@@ -407,6 +407,6 @@ if __name__ == '__main__':
     env = gym.make('LunarLanderContinuous-v2')
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  
-    train()
-    # test()
+    # train()
+    test()
 
