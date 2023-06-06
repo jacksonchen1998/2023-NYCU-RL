@@ -15,3 +15,5 @@ The OpenAI gym version used in this course is `0.25.2`.
 [DDPG and TRPO](./Homework%202/README.md)
 
 ## Homework 3
+
+[Soft Actor Critic](./Homework%203/README.md)
